@@ -11,6 +11,7 @@ ALT_ID = "F41393474808"
 
 STATE_DIR = Path.home() / ".kroger-clipper"
 STATE_FILE = STATE_DIR / "state.json"
+PROFILE_DIR = str(STATE_DIR / "profile")
 SCRIPT_DIR = Path(__file__).parent
 
 EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
