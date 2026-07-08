@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Kroger Coupon Clipper v3.2 — полный фикс"""
+"""Kroger Coupon Clipper v3.3 — авто-рефреш если нет купонов"""
 
 import asyncio, json, sys, time, ctypes
 from pathlib import Path
@@ -70,7 +70,6 @@ async def login(page):
     print("Navigating to signin...")
     await page.goto("https://www.kroger.com/signin", wait_until="domcontentloaded", timeout=60000)
     await page.wait_for_timeout(8000)
-    # email
     email_el = await find_el(page, "input[type='email']")
     if not email_el: email_el = await find_el(page, "input[name='loginfmt']")
     if not email_el: email_el = await find_el(page, "input#email")
@@ -89,7 +88,6 @@ async def login(page):
     else: print("❌ Email not found"); return False
     await click_text(page, ["Continue", "Next", "Sign in", "Submit"])
     await page.wait_for_timeout(3000)
-    # password
     pwd = await find_el(page, "input[type='password']")
     if not pwd: pwd = await find_el(page, "input[name='passwd']")
     if pwd:
@@ -97,7 +95,6 @@ async def login(page):
         await click_text(page, ["Sign In", "Sign in", "Submit", "Log in", "Continue"])
         await page.wait_for_timeout(10000)
     else: print("❌ Password not found"); return False
-    # Alternate ID
     for _ in range(25):
         try:
             body = (await page.text_content("body")).lower()
@@ -113,32 +110,65 @@ async def login(page):
     print("✅ Login complete")
     return True
 
+async def has_coupons(page):
+    """Проверяет: есть ли настоящие купоны или заглушка"""
+    try:
+        text = await page.text_content("body") or ""
+        if "not finding any coupons" in text.lower():
+            return False
+        # Если есть кнопка Clip — точно есть купоны
+        btns = page.locator("button:has-text('Clip')")
+        if await btns.count() > 0:
+            return True
+        # Если есть Coupons Clipped / YTD Savings — есть купоны
+        if "coupons clipped" in text.lower() or "loaded savings" in text.lower():
+            return True
+        # Если All Coupons таб показывает число (735 All Coupons) — есть
+        if "all coupons" in text.lower():
+            return True
+        return False
+    except:
+        return False
+
 async def clip_all(page):
     print("\n=== Clipping ===")
-    await page.goto("https://www.kroger.com/savings/cl/coupons/", wait_until="domcontentloaded", timeout=60000)
-    await page.wait_for_timeout(15000)  # ждём полную загрузку после логина
-
-    # Click "All Coupons"
-    print("Clicking 'All Coupons'...")
-    try:
-        all_btn = page.locator("button:has-text('All Coupons')").first
-        if await all_btn.count() > 0:
-            await all_btn.click(force=True, timeout=5000)
-            print("✅ All Coupons clicked")
-            await page.wait_for_timeout(5000)
-    except: pass
-
-    # Закрываем возможные диалоги
-    try:
-        await page.evaluate("document.querySelectorAll('dialog[open]').forEach(d=>d.close())")
-    except: pass
-
-    # Долгая прокрутка
+    
+    max_refresh = 5
+    for attempt in range(1, max_refresh + 1):
+        print(f"\n--- Attempt {attempt}/{max_refresh} ---")
+        await page.goto("https://www.kroger.com/savings/cl/coupons/", wait_until="domcontentloaded", timeout=60000)
+        await page.wait_for_timeout(12000)
+        
+        # Close dialogs
+        try:
+            await page.evaluate("document.querySelectorAll('dialog[open]').forEach(d=>d.close())")
+        except: pass
+        
+        # Click "All Coupons"
+        try:
+            all_btn = page.locator("button:has-text('All Coupons')").first
+            if await all_btn.count() > 0:
+                await all_btn.click(force=True, timeout=5000)
+                print("✅ All Coupons clicked")
+                await page.wait_for_timeout(5000)
+        except: pass
+        
+        if await has_coupons(page):
+            print("✅ Coupons found!")
+            break
+        
+        print("⚠️  No coupons yet, refreshing...")
+        if attempt < max_refresh:
+            await page.wait_for_timeout(3000)
+    else:
+        print("❌ Coupons not found after 5 refreshes")
+        return 0
+    
+    # Scroll
     print("Scrolling...")
     prev = 0
     for i in range(200):
-        try:
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        try: await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
         except: break
         await page.wait_for_timeout(1500)
         try:
@@ -147,40 +177,30 @@ async def clip_all(page):
             prev = h
         except: break
         if i % 10 == 0: print(f"  scroll {i}")
-
-    try:
-        await page.evaluate("window.scrollTo(0, 0)")
+    try: await page.evaluate("window.scrollTo(0, 0)")
     except: pass
     await page.wait_for_timeout(3000)
-
-    # POISK CLIP — перебираем все button во всех фреймах по тексту
+    
+    # POISK CLIP — brute force all buttons
     print("Looking for Clip buttons...")
     seen = 0
     for f in [page] + page.frames:
         try:
-            all_btns = await f.locator("button").all()
-            for btn in all_btns:
+            for btn in await f.locator("button").all():
                 try:
                     txt = (await btn.text_content() or "").strip().lower()
                     if txt == "clip":
                         await btn.click(force=True, timeout=5000)
                         seen += 1
-                        if seen % 5 == 0:
-                            print(f"  clipped {seen}")
-                except:
-                    continue
-        except:
-            continue
+                        if seen % 5 == 0: print(f"  clipped {seen}")
+                except: continue
+        except: continue
 
     if seen == 0:
-        # Fallback: ищем aria-label, class, data-testid
-        print("Fallback: trying alternative selectors...")
+        print("Fallback: aria/class selectors...")
         for sel in [
-            "button[class*='clip']",
-            "button[class*='Clip']",
-            "[data-testid*='clip']",
-            "[aria-label*='Clip']",
-            "button div:has-text('Clip')",
+            "button[class*='clip']", "[data-testid*='clip']",
+            "[aria-label*='Clip']", "button div:has-text('Clip')",
         ]:
             try:
                 els = page.locator(sel)
@@ -188,10 +208,7 @@ async def clip_all(page):
                 if n > 0:
                     print(f"  {sel}: {n}")
                     for i in range(n):
-                        try:
-                            await els.nth(i).click(force=True, timeout=5000)
-                            seen += 1
-                            if seen % 5 == 0: print(f"  clipped {seen}")
+                        try: await els.nth(i).click(force=True, timeout=5000); seen += 1
                         except: pass
                     if seen > 0: break
             except: continue
@@ -200,9 +217,9 @@ async def clip_all(page):
 
 async def main():
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    print("="*45)
-    print("  Kroger Clipper v3.2")
-    print("="*45)
+    print("=" * 45)
+    print("  Kroger Clipper v3.3 - auto-refresh")
+    print("=" * 45)
     bp = str(BROWSER) if BROWSER else None
     async with async_playwright() as p:
         args = ["--no-sandbox", "--disable-setuid-sandbox", "--disable-blink-features=AutomationControlled"]
