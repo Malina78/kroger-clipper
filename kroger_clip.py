@@ -62,7 +62,7 @@ async def main():
         ctx = await p.chromium.launch_persistent_context(
             user_data_dir=PROFILE, headless=False,
             executable_path=EDGE, args=["--no-sandbox","--disable-blink-features=AutomationControlled"],
-            viewport={"w":1280,"h":900}, user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/149.0.0.0",
+            viewport={"width":1280,"height":900}, user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/149.0.0.0",
             locale="en-US", timezone_id="America/Detroit")
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
         await page.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>undefined})")
