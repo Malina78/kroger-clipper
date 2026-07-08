@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Kroger Coupon Clipper v3.3 — авто-рефреш если нет купонов"""
+"""Kroger Coupon Clipper v3.4 — 8 refresh attempts"""
 
 import asyncio, json, sys, time, ctypes
 from pathlib import Path
@@ -111,40 +111,25 @@ async def login(page):
     return True
 
 async def has_coupons(page):
-    """Проверяет: есть ли настоящие купоны или заглушка"""
     try:
-        text = await page.text_content("body") or ""
-        if "not finding any coupons" in text.lower():
-            return False
-        # Если есть кнопка Clip — точно есть купоны
+        text = (await page.text_content("body") or "").lower()
+        if "not finding any coupons" in text: return False
         btns = page.locator("button:has-text('Clip')")
-        if await btns.count() > 0:
-            return True
-        # Если есть Coupons Clipped / YTD Savings — есть купоны
-        if "coupons clipped" in text.lower() or "loaded savings" in text.lower():
-            return True
-        # Если All Coupons таб показывает число (735 All Coupons) — есть
-        if "all coupons" in text.lower():
-            return True
+        if await btns.count() > 0: return True
+        if "coupons clipped" in text or "loaded savings" in text: return True
+        if "all coupons" in text: return True
         return False
-    except:
-        return False
+    except: return False
 
 async def clip_all(page):
     print("\n=== Clipping ===")
-    
-    max_refresh = 5
+    max_refresh = 8
     for attempt in range(1, max_refresh + 1):
         print(f"\n--- Attempt {attempt}/{max_refresh} ---")
         await page.goto("https://www.kroger.com/savings/cl/coupons/", wait_until="domcontentloaded", timeout=60000)
         await page.wait_for_timeout(12000)
-        
-        # Close dialogs
-        try:
-            await page.evaluate("document.querySelectorAll('dialog[open]').forEach(d=>d.close())")
+        try: await page.evaluate("document.querySelectorAll('dialog[open]').forEach(d=>d.close())")
         except: pass
-        
-        # Click "All Coupons"
         try:
             all_btn = page.locator("button:has-text('All Coupons')").first
             if await all_btn.count() > 0:
@@ -152,19 +137,15 @@ async def clip_all(page):
                 print("✅ All Coupons clicked")
                 await page.wait_for_timeout(5000)
         except: pass
-        
         if await has_coupons(page):
             print("✅ Coupons found!")
             break
-        
-        print("⚠️  No coupons yet, refreshing...")
-        if attempt < max_refresh:
-            await page.wait_for_timeout(3000)
+        print("⚠️  No coupons, refreshing...")
+        if attempt < max_refresh: await page.wait_for_timeout(3000)
     else:
-        print("❌ Coupons not found after 5 refreshes")
+        print("❌ No coupons after 8 refreshes")
         return 0
     
-    # Scroll
     print("Scrolling...")
     prev = 0
     for i in range(200):
@@ -173,15 +154,13 @@ async def clip_all(page):
         await page.wait_for_timeout(1500)
         try:
             h = await page.evaluate("document.body.scrollHeight")
-            if h == prev: break
-            prev = h
+            if h == prev: break; prev = h
         except: break
         if i % 10 == 0: print(f"  scroll {i}")
     try: await page.evaluate("window.scrollTo(0, 0)")
     except: pass
     await page.wait_for_timeout(3000)
     
-    # POISK CLIP — brute force all buttons
     print("Looking for Clip buttons...")
     seen = 0
     for f in [page] + page.frames:
@@ -195,16 +174,11 @@ async def clip_all(page):
                         if seen % 5 == 0: print(f"  clipped {seen}")
                 except: continue
         except: continue
-
     if seen == 0:
-        print("Fallback: aria/class selectors...")
-        for sel in [
-            "button[class*='clip']", "[data-testid*='clip']",
-            "[aria-label*='Clip']", "button div:has-text('Clip')",
-        ]:
+        print("Fallback selectors...")
+        for sel in ["button[class*='clip']", "[data-testid*='clip']", "[aria-label*='Clip']"]:
             try:
-                els = page.locator(sel)
-                n = await els.count()
+                els = page.locator(sel); n = await els.count()
                 if n > 0:
                     print(f"  {sel}: {n}")
                     for i in range(n):
@@ -212,13 +186,12 @@ async def clip_all(page):
                         except: pass
                     if seen > 0: break
             except: continue
-
     return seen
 
 async def main():
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     print("=" * 45)
-    print("  Kroger Clipper v3.3 - auto-refresh")
+    print("  Kroger Clipper v3.4")
     print("=" * 45)
     bp = str(BROWSER) if BROWSER else None
     async with async_playwright() as p:
