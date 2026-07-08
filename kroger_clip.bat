@@ -1,33 +1,10 @@
 @echo off
-title Kroger Coupon Clipper 🛒
-echo ============================================
-echo  Kroger Coupon Clipper v1.0
-echo ============================================
-echo.
-
-python --version >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [ERROR] Python not found!
-    pause
-    exit /b 1
+title Kroger Coupon Clipper
+cd /d "%~dp0"
+echo Starting Kroger Coupon Clipper...
+python kroger_clip.py
+if %ERRORLEVEL% NEQ 0 (
+    echo.
+    echo Error! Press any key to exit.
+    pause >nul
 )
-
-python -c "import playwright" >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [ERROR] Playwright not installed!
-    echo Run: pip install playwright
-    pause
-    exit /b 1
-)
-
-echo [INFO] Starting Kroger coupon clipper...
-echo [INFO] Do NOT close this window while running.
-echo.
-
-python "%~dp0kroger_clip.py"
-
-echo.
-echo ============================================
-echo  Done! Press any key to close.
-echo ============================================
-pause
