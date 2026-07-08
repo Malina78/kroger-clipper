@@ -6,7 +6,7 @@ from pathlib import Path
 from playwright.async_api import async_playwright
 
 EMAIL = "lizanddima@gmail.com"
-PASSWORD = "***"
+PASSWORD = "produkti2024"
 ALT_ID = "F41393474808"
 
 STATE_DIR = Path.home() / ".kroger-clipper"
